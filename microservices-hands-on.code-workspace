@@ -1,0 +1,21 @@
+{
+  "folders": [
+    {
+      "name": "Microservices Hands-on",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "terminal.integrated.cwd": "${workspaceFolder}",
+    "workbench.startupEditor": "readme",
+    "explorer.compactFolders": false
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-azuretools.vscode-docker",
+      "ms-kubernetes-tools.vscode-kubernetes-tools",
+      "redhat.vscode-yaml"
+    ]
+  }
+}
