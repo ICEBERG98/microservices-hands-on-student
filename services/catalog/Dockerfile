@@ -1,6 +1,2 @@
-FROM python:3.12-alpine
-WORKDIR /app
-COPY app.py .
-USER 65532:65532
-EXPOSE 8081
-CMD ["python", "app.py"]
+# Build this in class after Catalog works locally.
+# Goals: small Python image, non-root user, port 8081, explicit command.
