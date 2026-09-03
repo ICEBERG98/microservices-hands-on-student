@@ -1,133 +1,164 @@
-# Instructor runbook - 120-minute VS Code build-along
+# Session 6 instructor runbook - production Kubernetes hands-on
 
-## Teaching promise
+## The framing
 
-Say: **"Let us create our own set of microservices."** Then create the code in
-front of the class. The default branch contains only the starting skeleton.
-Use the `solution` branch solely as a recovery reference.
+Open with: **"Let us create our own set of microservices—but our real job today
+is to operate them correctly."**
 
-## Before students arrive
-
-- Open the repository folder in VS Code.
-- Keep one editor group for code and one integrated terminal visible.
-- Confirm Python 3 and `curl` work, then run `./scripts/setup.sh`.
-- If using containers or Kubernetes, connect to the classroom host first.
-- Keep the Git branch on `main` and the working tree clean.
-
-## 0-10 minutes - draw the boundary
-
-Draw only this architecture in `README.md`:
+The Flask code is already complete. Spend no more than ten minutes touring it.
+Students write Kubernetes and Helm configuration, predict behavior, inspect
+evidence, and repair faults. That is the assessed learning.
 
 ```text
 client -> storefront -> catalog
                    \-> orders -> catalog
+                          |
+                          v
+                         PVC
 ```
 
-Ask: Why not place all three responsibilities in one process? Land independent
-change, failure isolation, and ownership—while acknowledging the networking and
-operational cost introduced by microservices.
+## Alignment with completed classes
 
-## 10-30 minutes - create Catalog
+| Today | Prior classroom material | Student action |
+|---|---|---|
+| Probes, resources, storage | Production workload foundations | Configure and prove behavior |
+| Placement and disruption | Session 3 | Predict scheduling and safe disruption |
+| Services and EndpointSlices | Session 4 | Trace traffic and repair selectors/ports |
+| Ingress and TLS | Session 4 | Expose Storefront and verify identity/trust |
+| ServiceAccount, RBAC, NetworkPolicy | Session 4 | Allow one path while denying another |
+| Rendering, values, releases | Session 5 | Render, predict, install, inspect, upgrade |
+| Troubleshooting | Sessions 2-5 | Use evidence before changing configuration |
 
-Create `services/catalog/app.py` with Flask:
+## Before class
 
-- `app = Flask(__name__)`;
-- `@app.get("/products")`;
-- `@app.get("/products/<sku>")`;
-- `@app.get("/health/live")`.
+1. Open `microservices-hands-on.code-workspace` on branch `main`.
+2. Keep `LAB_GUIDE.md` open beside the VS Code integrated terminal.
+3. Confirm Docker Desktop is running and Kind, kubectl, and Helm are installed.
+4. Ensure the room network can download the Kind node, Calico, application,
+   and ingress-controller images; pre-pull them on the instructor machine.
+5. Students type the environment, cluster, image, and Kubernetes commands.
+6. Keep `solution` only as an instructor recovery branch.
 
-Run it in the integrated terminal and prove it with `curl`. Commit checkpoint:
+## 0-10 minutes - establish the system, not the implementation
 
-```bash
-git add . && git commit -m "build catalog service"
+Show one Flask route and one `requests` call. Demonstrate `/products` and
+`POST /orders`, then stop. Ask students to identify:
+
+- the three deployable units;
+- two synchronous dependencies;
+- the state that must survive an Orders Pod replacement;
+- the externally exposed service;
+- what can fail independently.
+
+Do not write application code during this segment.
+
+## 10-30 minutes - production workload controls
+
+Create the Catalog Deployment together, then have students adapt the pattern.
+Add and discuss:
+
+- ConfigMap-driven `APP_ENV`, `CATALOG_URL`, and `ORDERS_URL`;
+- startup, readiness, and liveness probes with distinct endpoints;
+- CPU and memory requests/limits;
+- Orders PVC mounted at `/data`.
+
+Required evidence:
+
+```text
+rendered fields -> Pod Ready condition -> EndpointSlice membership
+write order -> replace Orders Pod -> read the same order
 ```
 
-## 30-50 minutes - create Orders
+## 30-45 minutes - placement and disruption
 
-Create `services/orders/app.py`. Read `CATALOG_URL` from the environment, call
-Catalog before accepting an order, and store accepted orders in a JSON file.
-Discuss synchronous dependency failure and timeouts. Commit checkpoint:
+Ask students to predict before each change:
 
-```bash
-git add . && git commit -m "build orders service"
+- What do requests influence?
+- What happens with an impossible node selector?
+- Why does anti-affinity behave differently on one and three nodes?
+- What can a PodDisruptionBudget protect, and what can it not protect?
+
+Use `kubectl describe pod` and sorted Events as the primary evidence. Do not
+solve Pending by deleting Pods repeatedly.
+
+## 45-65 minutes - Service discovery and traffic
+
+Create ClusterIP Services for all three workloads. Trace:
+
+```text
+Service DNS -> Service port -> targetPort -> Ready Pod IP
 ```
 
-## 50-65 minutes - create Storefront
+Inspect labels, selectors, named ports, and EndpointSlices. Inject the supplied
+bad Catalog selector only after the healthy path has been proven.
 
-Create `services/storefront/app.py`. Add `GET /products`, `POST /orders`, and
-`GET /orders` as thin calls to the two internal services. Show a failed call by
-stopping Catalog, then restore it. Commit checkpoint:
+Expected reasoning:
 
-```bash
-git add . && git commit -m "connect storefront to internal services"
+```text
+DNS succeeds + Service exists + no EndpointSlice addresses
+-> inspect selector and Pod labels
 ```
 
-## 65-80 minutes - containerize
+## 65-82 minutes - Ingress and TLS
 
-Write one Dockerfile together, then let students adapt it twice. Add
-`compose.yaml`; replace loopback dependency URLs with Compose service names.
-Ask why `localhost` inside Storefront is not Catalog. Run the smoke test.
+Expose only Storefront. Configure the assigned hostname, path, backend Service,
+TLS host, and Secret reference. Prove the complete path with certificate
+verification enabled.
 
-## 80-105 minutes - move to Kubernetes
+Do not accept `curl -k` as final evidence. Keep private keys out of terminals,
+screenshots, Git, and `/config` responses.
 
-Create resources in this order:
+## 82-97 minutes - identity and network boundaries
 
-1. Namespace and ConfigMap;
-2. Catalog Deployment and Service;
-3. Orders Deployment, Service, and PVC;
-4. Storefront Deployment and Service;
-5. startup, readiness, and liveness probes;
-6. requests and limits.
+Use the smallest supplied RBAC scenario:
 
-Render before applying:
+- the assigned ServiceAccount can perform one required read;
+- a higher-risk action remains denied.
 
-```bash
-kubectl kustomize k8s/base
+Use the scaffolded NetworkPolicy rather than asking students to author advanced
+policy topology from memory. Prove the approved Storefront-to-Orders path and a
+blocked diagnostic-client path.
+
+## 97-110 minutes - Helm workflow
+
+Package or adapt the working manifests using the chart scaffold. Preserve the
+Session 5 rhythm:
+
+```text
+render -> predict -> mutate -> prove
 ```
 
-After deploying, trace the request path through Service selectors and
-EndpointSlices. Avoid adding Ingress/TLS until the internal path is healthy.
+Run lint/template before install. After install, inspect both Helm release
+state and Kubernetes objects. Change one value, upgrade, inspect history, then
+explain what rollback can and cannot reverse.
 
-## 105-117 minutes - evidence-led incident
+## 110-120 minutes - evidence-led incident
 
-Inject exactly one fault:
-
-```bash
-kubectl apply -f k8s/failures/bad-service-selector.yaml
-```
-
-Use this narration and record each answer in `INCIDENT_NOTES.md`:
+Use one fault only. Students must record:
 
 ```text
 symptom -> hypothesis -> evidence -> narrow -> change -> verify
 ```
 
-Strong evidence: the Service exists, DNS resolves, but its EndpointSlice has no
-addresses because the selector does not match Pod labels. Restore with:
+Minimum evidence should include one condition/Event/log/EndpointSlice or
+authorization result—not merely a final screenshot of Running Pods. Repeat the
+original failing action and one negative test after the repair.
+
+## What to cut if time slips
+
+Cut application explanation first, then the Helm rollback demonstration. Keep:
+
+1. probes/resources/storage;
+2. Service/EndpointSlice diagnosis;
+3. one security boundary;
+4. one complete evidence-led repair.
+
+## Recovery
+
+The known-good implementation is on `solution`. Inspect a file without changing
+the classroom branch:
 
 ```bash
-kubectl apply -f k8s/base/catalog.yaml
+git show solution:k8s/base/catalog.yaml
+git show solution:services/storefront/app.py
 ```
-
-## 117-120 minutes - close
-
-Ask students to name the new operational costs: discovery, timeouts, partial
-failure, distributed logs, version compatibility, and more deployment units.
-End with: microservices are an organizational and operational tradeoff, not a
-default measure of architectural maturity.
-
-## Recovery commands
-
-Inspect the completed file without changing branches:
-
-```bash
-git show solution:services/catalog/app.py
-```
-
-Restore one completed file only when necessary:
-
-```bash
-git show solution:services/catalog/app.py > /tmp/catalog-app.py
-```
-
-Copy from the temporary file manually so students can still follow the change.

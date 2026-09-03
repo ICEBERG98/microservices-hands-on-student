@@ -1,8 +1,37 @@
 #!/usr/bin/env python3
-"""Catalog service - we will build this together in class."""
+import os
+from flask import Flask, jsonify
 
-# TODO 1: import Flask and create app = Flask(__name__).
-# TODO 2: create a small PRODUCTS dictionary keyed by SKU.
-# TODO 3: use @app.get to implement /products and /products/<sku>.
-# TODO 4: add /health/startup, /health/ready, /health/live, and /config routes.
-# TODO 5: call app.run using PORT (default 8081).
+app = Flask(__name__)
+PRODUCTS = {
+    "keyboard": {"sku": "keyboard", "name": "Mechanical Keyboard", "price": 79},
+    "mouse": {"sku": "mouse", "name": "Wireless Mouse", "price": 39},
+    "monitor": {"sku": "monitor", "name": "27-inch Monitor", "price": 249},
+}
+
+
+@app.get("/products")
+def list_products():
+    return jsonify(products=list(PRODUCTS.values()))
+
+
+@app.get("/products/<sku>")
+def get_product(sku):
+    product = PRODUCTS.get(sku)
+    return (jsonify(product), 200) if product else (jsonify(error="unknown sku"), 404)
+
+
+@app.get("/health/startup")
+@app.get("/health/ready")
+@app.get("/health/live")
+def health():
+    return jsonify(status="ok", service="catalog")
+
+
+@app.get("/config")
+def config():
+    return jsonify(service="catalog", environment=os.getenv("APP_ENV", "development"))
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8081")))

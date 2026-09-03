@@ -1,8 +1,8 @@
-# Build Your Own Microservices - Live Hands-on
+# Operate Your Own Microservices - Session 6 Hands-on
 
-In this session we build a small shop system inside VS Code. We start with
-three empty Python services, make them communicate locally, containerize them,
-and deploy them to Kubernetes.
+In this session we operate a small shop system inside VS Code. The Flask
+services are already complete; the live work is Kubernetes production
+configuration, Helm, and evidence-led troubleshooting.
 
 ```text
 client -> storefront:8080 -> catalog:8081
@@ -22,10 +22,9 @@ Kubernetes, and troubleshooting.
 code /Users/kashish/git/microservices-hands-on
 ```
 
-Open the Command Palette and choose **Tasks: Run Task**. The numbered tasks
-follow the workshop flow.
-
-Run **0. Set up Flask environment** once before starting.
+Open [LAB_GUIDE.md](LAB_GUIDE.md) beside the integrated terminal. Students type
+each command and create each Kubernetes file themselves; there are deliberately
+no setup wrappers or task shortcuts.
 
 ## Local URLs
 
@@ -47,12 +46,13 @@ curl http://127.0.0.1:8080/orders
 
 ## Workshop checkpoints
 
-1. Each service starts and exposes a liveness endpoint.
-2. Storefront calls Catalog through a configurable URL.
-3. Orders validates products through Catalog and persists accepted orders.
-4. Docker Compose supplies service discovery by name.
-5. Kubernetes supplies Services, probes, resources, configuration, and a PVC.
-6. We inject one fault and diagnose it from evidence before changing YAML.
+1. Tour the working service boundaries and dependencies.
+2. Add Kubernetes configuration, probes, resources, and persistent storage.
+3. Prove scheduling decisions and disruption behavior.
+4. Trace Services through selectors, ports, and EndpointSlices.
+5. Verify Ingress/TLS, RBAC, and NetworkPolicy boundaries.
+6. Render and operate the system through Helm.
+7. Diagnose one fault from evidence before changing YAML.
 
-The `solution` branch contains the completed implementation for instructor
-recovery. Do not switch to it during the normal build-along.
+Use [LAB_CHECKLIST.md](LAB_CHECKLIST.md) during the exercise. The `solution`
+branch contains completed Kubernetes resources for instructor recovery.

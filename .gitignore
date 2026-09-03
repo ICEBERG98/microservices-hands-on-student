@@ -5,3 +5,4 @@ __pycache__/
 orders.json
 .pytest_cache/
 .venv/
+generated/

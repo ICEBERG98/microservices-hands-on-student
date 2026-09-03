@@ -1,3 +1,27 @@
-# We will add catalog, orders, and storefront together in class.
-# Key question: why can Storefront not use localhost to reach Catalog here?
-services: {}
+services:
+  catalog:
+    build: {context: ., dockerfile: services/catalog/Dockerfile}
+    environment: {APP_ENV: compose}
+    ports: ["8081:8081"]
+
+  orders:
+    build: {context: ., dockerfile: services/orders/Dockerfile}
+    environment:
+      APP_ENV: compose
+      CATALOG_URL: http://catalog:8081
+      DATA_FILE: /data/orders.json
+    ports: ["8082:8082"]
+    volumes: ["orders-data:/data"]
+    depends_on: [catalog]
+
+  storefront:
+    build: {context: ., dockerfile: services/storefront/Dockerfile}
+    environment:
+      APP_ENV: compose
+      CATALOG_URL: http://catalog:8081
+      ORDERS_URL: http://orders:8082
+    ports: ["8080:8080"]
+    depends_on: [catalog, orders]
+
+volumes:
+  orders-data:

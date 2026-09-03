@@ -1,0 +1,20 @@
+environment: development
+
+images:
+  storefront: microshop-storefront:local
+  catalog: microshop-catalog:local
+  orders: microshop-orders:local
+
+replicas:
+  storefront: 2
+  catalog: 2
+  orders: 1
+
+resources:
+  requests: {cpu: 25m, memory: 32Mi}
+  limits: {cpu: 200m, memory: 128Mi}
+
+ingress:
+  enabled: false
+  host: microshop.local
+  tlsSecret: microshop-tls

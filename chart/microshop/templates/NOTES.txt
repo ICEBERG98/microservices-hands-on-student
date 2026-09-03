@@ -1,0 +1,15 @@
+Templates to create or adapt in class
+
+Move the working Kubernetes structure into templates only after the plain
+manifests have been proven. Start with one Deployment and Service, then extract
+only the environment differences into values.yaml.
+
+Suggested order:
+1. _helpers.tpl
+2. configmap.yaml
+3. catalog.yaml
+4. orders.yaml
+5. storefront.yaml
+6. ingress.yaml
+
+Use the Session 5 rhythm: render, predict, mutate, prove.

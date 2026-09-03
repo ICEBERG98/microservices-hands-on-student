@@ -1,1 +1,8 @@
-# Adapt the Catalog Dockerfile for Storefront on port 8080.
+FROM python:3.12-alpine
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY services/storefront/app.py .
+USER 65532:65532
+EXPOSE 8080
+CMD ["python", "app.py"]
