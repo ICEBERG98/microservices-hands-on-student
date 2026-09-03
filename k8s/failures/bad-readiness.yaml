@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storefront
+  namespace: microshop
+spec:
+  template:
+    spec:
+      containers:
+        - name: storefront
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}

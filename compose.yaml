@@ -1,0 +1,41 @@
+services:
+  catalog:
+    build: ./services/catalog
+    environment:
+      APP_ENV: compose
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  orders:
+    build: ./services/orders
+    environment:
+      APP_ENV: compose
+      CATALOG_URL: http://catalog:8081
+      DATA_FILE: /data/orders.json
+    ports:
+      - "8082:8082"
+    volumes:
+      - orders-data:/data
+    depends_on:
+      catalog:
+        condition: service_healthy
+
+  storefront:
+    build: ./services/storefront
+    environment:
+      APP_ENV: compose
+      CATALOG_URL: http://catalog:8081
+      ORDERS_URL: http://orders:8082
+    ports:
+      - "8080:8080"
+    depends_on:
+      - catalog
+      - orders
+
+volumes:
+  orders-data:

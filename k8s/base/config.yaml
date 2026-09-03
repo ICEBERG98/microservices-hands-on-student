@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: microshop-config
+  namespace: microshop
+data:
+  APP_ENV: kubernetes
+  CATALOG_URL: http://catalog:8081
+  ORDERS_URL: http://orders:8082
+  DATA_FILE: /data/orders.json
