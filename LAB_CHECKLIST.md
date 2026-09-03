@@ -30,7 +30,7 @@ render -> predict -> apply -> observe -> verify
 
 - [ ] Workloads use the intended ServiceAccount.
 - [ ] The required API action is allowed and a broader action is denied.
-- [ ] The approved network path succeeds and an unrelated client is blocked.
+- [ ] NetworkPolicy is deferred to a course cluster with policy enforcement.
 
 ## Helm
 

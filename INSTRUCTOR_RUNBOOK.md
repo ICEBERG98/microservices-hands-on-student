@@ -25,7 +25,7 @@ client -> storefront -> catalog
 | Placement and disruption | Session 3 | Predict scheduling and safe disruption |
 | Services and EndpointSlices | Session 4 | Trace traffic and repair selectors/ports |
 | Ingress and TLS | Session 4 | Expose Storefront and verify identity/trust |
-| ServiceAccount, RBAC, NetworkPolicy | Session 4 | Allow one path while denying another |
+| ServiceAccount and RBAC | Session 4 | Allow one action while denying a broader one |
 | Rendering, values, releases | Session 5 | Render, predict, install, inspect, upgrade |
 | Troubleshooting | Sessions 2-5 | Use evidence before changing configuration |
 
@@ -34,8 +34,8 @@ client -> storefront -> catalog
 1. Open `microservices-hands-on.code-workspace` on branch `main`.
 2. Keep `LAB_GUIDE.md` open beside the VS Code integrated terminal.
 3. Confirm Docker Desktop is running and Kind, kubectl, and Helm are installed.
-4. Ensure the room network can download the Kind node, Calico, application,
-   and ingress-controller images; pre-pull them on the instructor machine.
+4. Ensure the room network can download the Kind node, application, and
+   ingress-controller images; pre-pull them on the instructor machine.
 5. Students type the environment, cluster, image, and Kubernetes commands.
 6. Keep `solution` only as an instructor recovery branch.
 
@@ -108,16 +108,17 @@ verification enabled.
 Do not accept `curl -k` as final evidence. Keep private keys out of terminals,
 screenshots, Git, and `/config` responses.
 
-## 82-97 minutes - identity and network boundaries
+## 82-97 minutes - workload identity and authorization
 
 Use the smallest supplied RBAC scenario:
 
 - the assigned ServiceAccount can perform one required read;
 - a higher-risk action remains denied.
 
-Use the scaffolded NetworkPolicy rather than asking students to author advanced
-policy topology from memory. Prove the approved Storefront-to-Orders path and a
-blocked diagnostic-client path.
+Do not add NetworkPolicy to the default Kind exercise. Its basic network does
+not enforce policy, and installing another CNI would distract from the concepts
+you are prepared to teach. Revisit the supplied policy later in the configured
+course environment.
 
 ## 97-110 minutes - Helm workflow
 
@@ -150,7 +151,7 @@ Cut application explanation first, then the Helm rollback demonstration. Keep:
 
 1. probes/resources/storage;
 2. Service/EndpointSlice diagnosis;
-3. one security boundary;
+3. one RBAC security boundary;
 4. one complete evidence-led repair.
 
 ## Recovery

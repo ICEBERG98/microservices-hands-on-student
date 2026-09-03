@@ -50,7 +50,7 @@ curl http://127.0.0.1:8080/orders
 2. Add Kubernetes configuration, probes, resources, and persistent storage.
 3. Prove scheduling decisions and disruption behavior.
 4. Trace Services through selectors, ports, and EndpointSlices.
-5. Verify Ingress/TLS, RBAC, and NetworkPolicy boundaries.
+5. Verify Ingress/TLS and RBAC boundaries.
 6. Render and operate the system through Helm.
 7. Diagnose one fault from evidence before changing YAML.
 

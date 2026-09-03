@@ -1,10 +1,22 @@
-# Local Kind lab - commands students perform themselves
+# From three local services to a Kubernetes application
 
-Use the VS Code integrated terminal throughout. Do not copy a final repository
-or run a setup wrapper. At every stage, explain what the command changes and
-what evidence will prove it worked.
+Today we have a small shop application with three services:
 
-## 1. Verify the local tools
+```text
+storefront -> catalog
+          \-> orders -> catalog
+```
+
+The Flask code is already written. We are going to take responsibility for
+running it: first on the laptop, then inside a local Kubernetes cluster.
+
+Work in the VS Code terminal. Type the commands rather than pasting the whole
+lab at once. After every change, stop and look at what Kubernetes is telling
+you.
+
+## Before we start
+
+Check the tools we will actually use:
 
 ```bash
 docker version
@@ -13,18 +25,18 @@ kubectl version --client
 helm version
 ```
 
-If a command is missing on macOS, install Docker Desktop first, start it, then:
+Docker must be running, not merely installed. If `docker version` cannot reach
+the server, start Docker Desktop before going further.
+
+On macOS, the remaining command-line tools can be installed with:
 
 ```bash
 brew install kind kubectl helm
 ```
 
-Checkpoint: `docker info` succeeds. Kind creates Kubernetes nodes as Docker
-containers, so a CLI without a running Docker engine is not sufficient.
+## First, let us see the application
 
-## 2. Run the application before Kubernetes
-
-Create the Python environment:
+Create a Python environment and install the two application dependencies:
 
 ```bash
 python3 -m venv .venv
@@ -32,21 +44,27 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Open three VS Code terminals and run one command in each:
+Open three VS Code terminals.
+
+Catalog:
 
 ```bash
 APP_ENV=local PORT=8081 python services/catalog/app.py
 ```
 
+Orders:
+
 ```bash
 APP_ENV=local PORT=8082 CATALOG_URL=http://127.0.0.1:8081 DATA_FILE=/tmp/orders.json python services/orders/app.py
 ```
+
+Storefront:
 
 ```bash
 APP_ENV=local PORT=8080 CATALOG_URL=http://127.0.0.1:8081 ORDERS_URL=http://127.0.0.1:8082 python services/storefront/app.py
 ```
 
-In a fourth terminal:
+Try the complete path from a fourth terminal:
 
 ```bash
 curl http://127.0.0.1:8080/products
@@ -54,12 +72,17 @@ curl -X POST http://127.0.0.1:8080/orders -H 'Content-Type: application/json' -d
 curl http://127.0.0.1:8080/orders
 ```
 
-Checkpoint: students can draw the request path and identify which value must
-change when the services no longer share the host network.
+Before moving on, answer one question: when these processes become separate
+Pods, can they continue to find each other through `127.0.0.1`?
 
-## 3. Create a multi-node Kind cluster
+They cannot. We will need Kubernetes networking and stable service names.
 
-In VS Code, create `kind-config.yaml`:
+## Give ourselves a cluster
+
+Kind runs Kubernetes nodes as Docker containers. We will use two workers so
+that placement and disruption are visible rather than theoretical.
+
+Create `kind-config.yaml` in VS Code:
 
 ```yaml
 kind: Cluster
@@ -73,32 +96,20 @@ nodes:
         hostPort: 8443
   - role: worker
   - role: worker
-networking:
-  disableDefaultCNI: true
-  podSubnet: 192.168.0.0/16
 ```
 
-Create the cluster. Its nodes will initially be `NotReady` because we
-deliberately disabled Kind's simple default networking implementation:
+Now create the cluster and look at it:
 
 ```bash
 kind create cluster --name microshop --config kind-config.yaml
 kubectl config current-context
-kubectl cluster-info
 kubectl get nodes -o wide
 ```
 
-Install Calico so the cluster has both Pod networking and NetworkPolicy
-enforcement:
+The context should be `kind-microshop` and all three nodes should become
+`Ready`. Do not continue on the wrong context.
 
-```bash
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.2/manifests/v1_crd_projectcalico_org.yaml
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.2/manifests/tigera-operator.yaml
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.2/manifests/custom-resources.yaml
-kubectl wait --for=condition=Ready nodes --all --timeout=5m
-```
-
-Add labels for the placement exercise:
+Label the workers so that we can make an intentional placement decision later:
 
 ```bash
 kubectl label node microshop-worker topology.kubernetes.io/zone=zone-a workload=apps
@@ -106,32 +117,96 @@ kubectl label node microshop-worker2 topology.kubernetes.io/zone=zone-b workload
 kubectl get nodes -L topology.kubernetes.io/zone,workload
 ```
 
-Checkpoint: current context is `kind-microshop`, all three nodes are Ready, and
-Calico Pods are running. Without a policy-enforcing CNI, later NetworkPolicy
-tests would be misleading.
+## Build an image—and discover the Kind boundary
 
-## 4. Build and load the three images
+Start with Catalog only:
 
 ```bash
 docker build -f services/catalog/Dockerfile -t microshop-catalog:local .
+```
+
+The image now exists on the laptop. Kind's nodes are separate Docker
+containers, so their container runtime cannot see that image yet:
+
+```bash
+kind load docker-image microshop-catalog:local --name microshop
+```
+
+This is why the classroom manifests use `imagePullPolicy: Never`: the image is
+loaded into the nodes instead of pulled from a registry.
+
+Build and load the other two in the same way:
+
+```bash
 docker build -f services/orders/Dockerfile -t microshop-orders:local .
 docker build -f services/storefront/Dockerfile -t microshop-storefront:local .
-
-kind load docker-image microshop-catalog:local --name microshop
 kind load docker-image microshop-orders:local --name microshop
 kind load docker-image microshop-storefront:local --name microshop
 ```
 
-Ask: why use `imagePullPolicy: Never` for these local images? What would change
-if a registry were used?
+## Get one Pod running before designing the whole system
 
-## 5. Write the Kubernetes resources
+Create `k8s/base/namespace.yaml` for a namespace named `microshop`. Add it to
+`k8s/base/kustomization.yaml`, render it, and apply it:
 
-Create the files under `k8s/base/` and add each to `kustomization.yaml`.
+```bash
+kubectl kustomize k8s/base
+kubectl apply -k k8s/base
+```
 
-### Namespace and configuration
+Next create `k8s/base/catalog.yaml` with a Catalog Deployment. For the first
+attempt, keep it small:
 
-Create namespace `microshop` and a ConfigMap containing:
+- image `microshop-catalog:local`;
+- `imagePullPolicy: Never`;
+- container port `8081` named `http`;
+- one replica;
+- Pod label `app: catalog`.
+
+Apply it and watch what happens:
+
+```bash
+kubectl apply -k k8s/base
+kubectl get pods -n microshop -w
+```
+
+When the Pod is Running, inspect the object rather than immediately moving on:
+
+```bash
+kubectl describe pod -n microshop -l app=catalog
+kubectl logs -n microshop -l app=catalog
+```
+
+At this point we have a process, but no stable way for another Pod to find it.
+
+## Give Catalog a stable name
+
+Add a ClusterIP Service named `catalog` to `catalog.yaml`. Its selector must
+match the Pod label, and its port must lead to the named container port.
+
+```bash
+kubectl apply -k k8s/base
+kubectl get service,endpointslice -n microshop
+kubectl get pods -n microshop --show-labels
+```
+
+The EndpointSlice is the useful proof here. If it has an address, the selector,
+readiness state, and Service relationship are working together.
+
+Now deliberately apply the broken Service:
+
+```bash
+kubectl apply -f k8s/failures/bad-service-selector.yaml
+kubectl get service,endpointslice -n microshop
+```
+
+Do not open the answer file. Compare the Service selector with the Pod labels,
+form a hypothesis, repair `k8s/base/catalog.yaml`, and reapply the base.
+
+## Add Orders; configuration becomes necessary
+
+Orders needs to know where Catalog lives. Hardcoding an address in the image
+would tie configuration to the artifact, so create `k8s/base/config.yaml` with:
 
 ```text
 APP_ENV=kubernetes
@@ -140,68 +215,109 @@ ORDERS_URL=http://orders:8082
 DATA_FILE=/data/orders.json
 ```
 
-Keep a sample sensitive value in a Secret, but never decode or display it in
-submitted evidence.
-
-### Deployments
-
-Create Catalog first, then adapt the pattern for Orders and Storefront. Each
-Deployment must include:
-
-- matching selector and Pod labels;
-- named container port;
-- ConfigMap/Secret references;
-- startup, readiness, and liveness probes using the supplied endpoints;
-- CPU/memory requests and limits;
-- `imagePullPolicy: Never`;
-- a ServiceAccount;
-- placement across the two labelled workers where practical.
-
-Render before applying:
+Create the Orders Deployment and Service. Load the ConfigMap with `envFrom`.
+Use image `microshop-orders:local`, container port `8082`, and label
+`app: orders`.
 
 ```bash
-kubectl kustomize k8s/base
-kubectl apply --dry-run=client -k k8s/base
 kubectl apply -k k8s/base
+kubectl get pods,service,endpointslice -n microshop
+kubectl logs -n microshop -l app=orders
+```
+
+Create Storefront in the same way on container port `8080`. Once all three
+Services have endpoints, temporarily forward Storefront to the laptop:
+
+```bash
+kubectl port-forward -n microshop service/storefront 8080:80
+```
+
+Repeat the three `curl` requests from the beginning. We now have the same user
+flow, but each responsibility runs in a separate Pod and uses Kubernetes DNS.
+
+## Now ask whether Running is good enough
+
+So far Kubernetes only knows whether each process exists. Add the probes using
+the endpoints already present in the application:
+
+```text
+startup:   /health/startup
+readiness: /health/ready
+liveness:  /health/live
+```
+
+Use the named `http` port. Apply the change and compare these signals:
+
+```bash
+kubectl get pods -n microshop
+kubectl describe pod -n microshop -l app=storefront
+kubectl get endpointslice -n microshop
+```
+
+Discuss the difference visible in the system:
+
+- startup protects initialization;
+- readiness controls Service membership;
+- liveness can restart an unhealthy container.
+
+Add CPU and memory requests and limits only after the workloads are healthy.
+Then inspect what the scheduler now knows:
+
+```bash
+kubectl describe node microshop-worker
+kubectl get pods -n microshop -o custom-columns=NAME:.metadata.name,CPU:.spec.containers[0].resources.requests.cpu,MEMORY:.spec.containers[0].resources.requests.memory
+```
+
+## Let Orders lose data once
+
+Create an order, note the response, and then delete the Orders Pod:
+
+```bash
+kubectl delete pod -n microshop -l app=orders
+kubectl rollout status deployment/orders -n microshop
+```
+
+Fetch the orders again. The replacement Pod has a new container filesystem, so
+the order is gone. That failure gives us the reason for persistent storage.
+
+Create a PVC, mount it at `/data`, and repeat the same experiment:
+
+```bash
+kubectl get pvc -n microshop
+kubectl get pv
+```
+
+Create an order, replace the Pod again, and prove that the order remains. The
+evidence is the before-and-after API response, not merely a Bound PVC.
+
+## Make replicas and placement visible
+
+Scale Catalog and Storefront to two replicas. Use the worker labels from
+earlier to keep application Pods on nodes labelled `workload=apps`.
+
+```bash
 kubectl get pods -n microshop -o wide
+```
+
+Before fixing it, try an impossible node selector on one Deployment. Observe
+the Pending Pod:
+
+```bash
+kubectl describe pod -n microshop <pending-pod-name>
 kubectl get events -n microshop --sort-by=.lastTimestamp
 ```
 
-### Persistent Orders data
+The scheduling Event should lead to the repair. Do not delete and recreate the
+Pod until you understand why no node is eligible.
 
-Create a PVC and mount it at `/data` in Orders. Create an order, delete the
-Orders Pod, wait for its replacement, and prove the order still exists.
+Add a PodDisruptionBudget to one two-replica workload. Discuss what it protects
+during voluntary disruption and why it cannot protect against every failure.
 
-## 6. Create and diagnose Services
+## Expose only the edge service
 
-Create ClusterIP Services named `catalog`, `orders`, and `storefront`.
+Catalog and Orders should remain internal. Storefront is the entry point.
 
-```bash
-kubectl get service,endpointslice -n microshop
-kubectl describe service catalog -n microshop
-kubectl get pods -n microshop --show-labels
-```
-
-Inject the supplied bad selector only after the healthy route works:
-
-```bash
-kubectl apply -f k8s/failures/bad-service-selector.yaml
-```
-
-Diagnose it from DNS, selectors, Pod labels, readiness, ports, and
-EndpointSlices. Repair the generating manifest—not the live object alone.
-
-## 7. Add scheduling and disruption controls
-
-Try one impossible node selector and observe the `PodScheduled` condition and
-`FailedScheduling` Event. Then repair it using the labels created earlier.
-
-Add a PodDisruptionBudget to a two-replica workload. Explain why a PDB affects
-voluntary eviction but does not guarantee availability during every failure.
-
-## 8. Install Ingress and configure TLS
-
-Install the controller by typing the Helm commands:
+Install the ingress controller with Helm:
 
 ```bash
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
@@ -209,8 +325,10 @@ helm repo update
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=NodePort --set controller.service.nodePorts.http=30080 --set controller.service.nodePorts.https=30443 --wait
 ```
 
-Create a short-lived local certificate and Kubernetes TLS Secret. Keep the key
-under ignored `generated/`:
+Create an Ingress for `microshop.local` that points to Storefront. First prove
+ordinary HTTP through `http://microshop.local:8080` using `curl --resolve`.
+
+Then create a short-lived certificate:
 
 ```bash
 mkdir -p generated
@@ -218,54 +336,84 @@ openssl req -x509 -nodes -newkey rsa:2048 -days 7 -keyout generated/microshop.ke
 kubectl create secret tls microshop-tls -n microshop --cert=generated/microshop.crt --key=generated/microshop.key
 ```
 
-Write an Ingress that exposes only Storefront. Verify without `-k`:
+Add the TLS host and Secret reference to the Ingress. Verify identity and trust
+without `-k`:
 
 ```bash
 curl --resolve microshop.local:8443:127.0.0.1 --cacert generated/microshop.crt https://microshop.local:8443/products
 ```
 
-## 9. Add RBAC and NetworkPolicy
+## Add one narrow permission
 
-Create one Role/RoleBinding that permits the assigned ServiceAccount to read
-ConfigMaps in `microshop`. Prove a read is allowed and Secret deletion denied:
+Run Storefront under its own ServiceAccount. Give it a namespaced Role that can
+read ConfigMaps, then bind only that ServiceAccount.
+
+Prove both sides of least privilege:
 
 ```bash
 kubectl auth can-i get configmaps -n microshop --as=system:serviceaccount:microshop:storefront
 kubectl auth can-i delete secrets -n microshop --as=system:serviceaccount:microshop:storefront
 ```
 
-Apply a default-deny policy, allow DNS, then allow only the required service
-flows. Test an approved caller and an unrelated diagnostic Pod before and after.
+The first result should be yes and the second no. Do not use `cluster-admin` to
+make the first check pass.
 
-## 10. Move the proven resources into Helm
+NetworkPolicy is not part of the default Kind path today. Kind's basic network
+does not enforce it by itself, and adding another network provider would turn
+this into a networking-tool installation class. We will practise the supplied
+policy on the course environment where enforcement is already configured.
 
-Use `chart/microshop/` only after the plain resources work:
+## Only now does Helm solve a problem we actually have
+
+We have three Deployments, three Services, shared configuration, and repeated
+labels, probes, resources, and environment differences. That repetition is the
+reason to introduce the chart under `chart/microshop/`.
+
+Move one proven resource into a template at a time. Keep the structure in the
+template and move only genuine environment differences into `values.yaml`.
+
+After each template:
 
 ```bash
 helm lint chart/microshop
 helm template microshop chart/microshop -n microshop
-helm upgrade --install microshop chart/microshop -n microshop --create-namespace
+```
+
+Before installation, read the rendered YAML. Predict which objects will change.
+Then install or upgrade and inspect both Helm and Kubernetes:
+
+```bash
+helm upgrade --install microshop chart/microshop -n microshop
 helm get values microshop -n microshop --all
 helm get manifest microshop -n microshop
 helm history microshop -n microshop
+kubectl get deployment,pod,service,endpointslice -n microshop
 ```
 
-Change one environment value, predict the rendered change, upgrade, and inspect
-the new revision.
+Change one value, render again, predict the result, and perform an upgrade. This
+is the Session 5 rhythm in a system the class has now built and diagnosed:
 
-## 11. Finish with evidence, not green status
+```text
+render -> predict -> mutate -> prove
+```
 
-For the assigned failure, complete `INCIDENT_NOTES.md`:
+## Close with one incident
+
+Choose one failure from the work above: empty endpoints, Pending placement,
+failed readiness, lost data, wrong Ingress backend, or denied authorization.
+
+Write the investigation in `INCIDENT_NOTES.md`:
 
 ```text
 symptom -> hypothesis -> evidence -> narrow -> change -> verify
 ```
 
-Repeat the original failing request and one negative test after the repair.
+The final state is not enough. Keep the Event, log, condition, EndpointSlice,
+authorization result, or request output that explains why the repair was right.
 
-## Cleanup after class
+## When the session is over
 
-Confirm the exact target before deletion:
+Check the target before removing it:
 
 ```bash
 kind get clusters
