@@ -12,9 +12,9 @@ client -> storefront:8080 -> catalog:8081
                                 persistent data
 ```
 
-The application uses only the Python standard library. This keeps the session
-focused on service boundaries, configuration, containers, Kubernetes, and
-troubleshooting rather than package installation.
+The services use Flask and `requests`, keeping routes and HTTP calls short and
+readable while we focus on service boundaries, configuration, containers,
+Kubernetes, and troubleshooting.
 
 ## Start in VS Code
 
@@ -24,6 +24,8 @@ code /Users/kashish/git/microservices-hands-on
 
 Open the Command Palette and choose **Tasks: Run Task**. The numbered tasks
 follow the workshop flow.
+
+Run **0. Set up Flask environment** once before starting.
 
 ## Local URLs
 

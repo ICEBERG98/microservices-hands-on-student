@@ -4,3 +4,4 @@ __pycache__/
 .env
 orders.json
 .pytest_cache/
+.venv/

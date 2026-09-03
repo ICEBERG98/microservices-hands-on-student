@@ -10,7 +10,7 @@ Use the `solution` branch solely as a recovery reference.
 
 - Open the repository folder in VS Code.
 - Keep one editor group for code and one integrated terminal visible.
-- Confirm Python 3 and `curl` work.
+- Confirm Python 3 and `curl` work, then run `./scripts/setup.sh`.
 - If using containers or Kubernetes, connect to the classroom host first.
 - Keep the Git branch on `main` and the working tree clean.
 
@@ -29,12 +29,12 @@ operational cost introduced by microservices.
 
 ## 10-30 minutes - create Catalog
 
-Create `services/catalog/app.py` with:
+Create `services/catalog/app.py` with Flask:
 
-- `ThreadingHTTPServer`;
-- `GET /products`;
-- `GET /products/<sku>`;
-- `GET /health/live`.
+- `app = Flask(__name__)`;
+- `@app.get("/products")`;
+- `@app.get("/products/<sku>")`;
+- `@app.get("/health/live")`.
 
 Run it in the integrated terminal and prove it with `curl`. Commit checkpoint:
 
