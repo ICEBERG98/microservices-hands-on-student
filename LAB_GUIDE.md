@@ -14,6 +14,10 @@ Work in the VS Code terminal. Type the commands rather than pasting the whole
 lab at once. After every change, stop and look at what Kubernetes is telling
 you.
 
+We will let `kubectl` generate boring first drafts. The generator does not
+design the workload for us; it gives us valid metadata and structure that we
+then read and improve in VS Code.
+
 ## Before we start
 
 Check the tools we will actually use:
@@ -146,7 +150,14 @@ kind load docker-image microshop-storefront:local --name microshop
 
 ## Get one Pod running before designing the whole system
 
-Create `k8s/base/namespace.yaml` for a namespace named `microshop`. Add it to
+Ask `kubectl` for a Namespace manifest instead of typing its boilerplate:
+
+```bash
+kubectl create namespace microshop --dry-run=client -o yaml > k8s/base/namespace.yaml
+```
+
+Open the generated file in VS Code. Notice that the command only produced YAML;
+`--dry-run=client` did not change the cluster. Add the file to
 `k8s/base/kustomization.yaml`, render it, and apply it:
 
 ```bash
@@ -154,8 +165,18 @@ kubectl kustomize k8s/base
 kubectl apply -k k8s/base
 ```
 
-Next create `k8s/base/catalog.yaml` with a Catalog Deployment. For the first
-attempt, keep it small:
+Generate the first draft of the Catalog Deployment:
+
+```bash
+kubectl create deployment catalog \
+  --image=microshop-catalog:local \
+  --replicas=1 \
+  -n microshop \
+  --dry-run=client -o yaml > k8s/base/catalog-deployment.yaml
+```
+
+Open it before applying it. The generator does not know our listener, local
+image policy, or health model. Add:
 
 - image `microshop-catalog:local`;
 - `imagePullPolicy: Never`;
@@ -181,8 +202,18 @@ At this point we have a process, but no stable way for another Pod to find it.
 
 ## Give Catalog a stable name
 
-Add a ClusterIP Service named `catalog` to `catalog.yaml`. Its selector must
-match the Pod label, and its port must lead to the named container port.
+Generate a ClusterIP Service named `catalog`:
+
+```bash
+kubectl create service clusterip catalog \
+  --tcp=8081:8081 \
+  -n microshop \
+  --dry-run=client -o yaml > k8s/base/catalog-service.yaml
+```
+
+Open it and compare its selector with the generated Deployment labels. Change
+the `targetPort` to the named container port after adding that port to the
+Deployment.
 
 ```bash
 kubectl apply -k k8s/base
@@ -206,7 +237,19 @@ form a hypothesis, repair `k8s/base/catalog.yaml`, and reapply the base.
 ## Add Orders; configuration becomes necessary
 
 Orders needs to know where Catalog lives. Hardcoding an address in the image
-would tie configuration to the artifact, so create `k8s/base/config.yaml` with:
+would tie configuration to the artifact, so generate a ConfigMap first draft:
+
+```bash
+kubectl create configmap microshop-config \
+  -n microshop \
+  --from-literal=APP_ENV=kubernetes \
+  --from-literal=CATALOG_URL=http://catalog:8081 \
+  --from-literal=ORDERS_URL=http://orders:8082 \
+  --from-literal=DATA_FILE=/data/orders.json \
+  --dry-run=client -o yaml > k8s/base/config.yaml
+```
+
+Open the generated YAML. Its data should be:
 
 ```text
 APP_ENV=kubernetes
@@ -215,9 +258,9 @@ ORDERS_URL=http://orders:8082
 DATA_FILE=/data/orders.json
 ```
 
-Create the Orders Deployment and Service. Load the ConfigMap with `envFrom`.
-Use image `microshop-orders:local`, container port `8082`, and label
-`app: orders`.
+Generate the Orders Deployment and Service using the same two `kubectl create`
+patterns, changing the name, image, and ports. Then edit the Deployment to load
+the ConfigMap with `envFrom`.
 
 ```bash
 kubectl apply -k k8s/base
@@ -225,7 +268,7 @@ kubectl get pods,service,endpointslice -n microshop
 kubectl logs -n microshop -l app=orders
 ```
 
-Create Storefront in the same way on container port `8080`. Once all three
+Generate Storefront in the same way on container port `8080`. Once all three
 Services have endpoints, temporarily forward Storefront to the laptop:
 
 ```bash
@@ -325,8 +368,18 @@ helm repo update
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=NodePort --set controller.service.nodePorts.http=30080 --set controller.service.nodePorts.https=30443 --wait
 ```
 
-Create an Ingress for `microshop.local` that points to Storefront. First prove
-ordinary HTTP through `http://microshop.local:8080` using `curl --resolve`.
+Generate an Ingress first draft and inspect the rule it creates:
+
+```bash
+kubectl create ingress microshop \
+  -n microshop \
+  --class=nginx \
+  --rule='microshop.local/*=storefront:80' \
+  --dry-run=client -o yaml > k8s/base/ingress.yaml
+```
+
+Add it to `kustomization.yaml`. First prove ordinary HTTP through
+`http://microshop.local:8080` using `curl --resolve`.
 
 Then create a short-lived certificate:
 
@@ -345,8 +398,28 @@ curl --resolve microshop.local:8443:127.0.0.1 --cacert generated/microshop.crt h
 
 ## Add one narrow permission
 
-Run Storefront under its own ServiceAccount. Give it a namespaced Role that can
-read ConfigMaps, then bind only that ServiceAccount.
+Generate a ServiceAccount, namespaced Role, and RoleBinding as separate YAML
+files:
+
+```bash
+kubectl create serviceaccount storefront \
+  -n microshop \
+  --dry-run=client -o yaml > k8s/base/serviceaccount.yaml
+
+kubectl create role storefront-config-reader \
+  -n microshop \
+  --verb=get,list \
+  --resource=configmaps \
+  --dry-run=client -o yaml > k8s/base/role.yaml
+
+kubectl create rolebinding storefront-config-reader \
+  -n microshop \
+  --role=storefront-config-reader \
+  --serviceaccount=microshop:storefront \
+  --dry-run=client -o yaml > k8s/base/rolebinding.yaml
+```
+
+Add them to `kustomization.yaml` and run Storefront under that ServiceAccount.
 
 Prove both sides of least privilege:
 
@@ -368,6 +441,10 @@ policy on the course environment where enforcement is already configured.
 We have three Deployments, three Services, shared configuration, and repeated
 labels, probes, resources, and environment differences. That repetition is the
 reason to introduce the chart under `chart/microshop/`.
+
+In a fresh project, `helm create microshop` can generate a conventional chart.
+This repository already contains the smaller `chart/microshop/` scaffold so we
+do not spend class deleting unrelated example templates.
 
 Move one proven resource into a template at a time. Keep the structure in the
 template and move only genuine environment differences into `values.yaml`.
