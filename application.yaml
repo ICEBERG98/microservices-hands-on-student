@@ -6,11 +6,11 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/ICEBERG98/microservices-hands-on.git
+    repoURL: https://github.com/ICEBERG98/microservices-hands-on-student.git
     targetRevision: main
     path: k8s/base
   destination:
-    server: http://kubernetes.default.svc
+    server: https://kubernetes.default.svc
     namespace: microshop
   syncPolicy:
     syncOptions:
