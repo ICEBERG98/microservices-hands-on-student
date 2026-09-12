@@ -6,7 +6,7 @@ metadata:
   name: catalog
   namespace: microshop
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: catalog
