@@ -6,7 +6,7 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - catalog-deployment.yaml
-  - services.yaml
+ # - services.yaml
   - orders-deployment.yaml
   - storefront-deployment.yaml
   - pv.yml
