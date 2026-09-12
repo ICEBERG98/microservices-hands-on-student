@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: microshop
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ICEBERG98/microservices-hands-on.git
+    targetRevision: main
+    path: k8s/base
+  destination:
+    server: http://kubernetes.default.svc
+    namespace: microshop
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+
