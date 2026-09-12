@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: catalog
+  name: catalog
+  namespace: microshop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: catalog
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: catalog
+    spec:
+      containers:
+      - image: microshop-catalog:local
+        name: microshop-catalog
+        ports:
+          - name: http
+            containerPort: 8081
+        readinessProbe:
+          httpGet: 
+            path: /health/ready
+            port: http
+          periodSeconds: 3
+        livenessProbe:
+          httpGet: 
+            path: /health/live
+            port: http
+          periodSeconds: 5
+        startupProbe:
+          httpGet: 
+            path: /health/live
+            port: http
+          failureThreshold: 10
+          periodSeconds: 1
+            
+
+        envFrom:
+          - configMapRef:
+              name: microshop-config

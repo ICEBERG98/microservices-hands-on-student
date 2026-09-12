@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: storefront
+  name: storefront
+  namespace: microshop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: storefront
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: storefront
+    spec:
+      containers:
+      - image: microshop-storefront:local
+        name: storefront
+        ports:
+          - name: http
+            containerPort: 8080
+        envFrom:
+          - configMapRef:
+              name: microshop-config
+status: {}
